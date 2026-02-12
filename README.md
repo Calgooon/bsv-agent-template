@@ -225,11 +225,23 @@ Your agent is now live at `https://bsv-agent-template.<your-subdomain>.workers.d
 
 ---
 
+## See It in Action
+
+[banana-agent](https://github.com/Calgooon/banana-agent) is a real agent built from this template — AI image generation with dynamic pricing, live in production. Try it with the `/x402` skill in [Claude Code](https://claude.com/claude-code):
+
+```
+/x402 pay POST https://banana-agent.dev-a3e.workers.dev/generate {"prompt": "a banana wearing sunglasses", "resolution": "2K"}
+```
+
+This performs the full flow: BRC-31 handshake → authenticated request → 402 payment negotiation → BSV micropayment → image generation. All in one command.
+
+---
+
 ## Related Projects
 
 - **[x402-client](https://github.com/Calgooon/x402)** — Python client library for BRC-31 auth + BRC-29 payment. Use this to test your agent.
 - **[bsv-auth-cloudflare](https://github.com/Calgooon)** — The Rust middleware that powers authentication and payment verification.
-- **[banana-agent](https://github.com/Calgooon/banana-agent)** — A real-world agent built from this template: AI image generation with dynamic pricing. Live at [`banana-agent.dev-a3e.workers.dev`](https://banana-agent.dev-a3e.workers.dev).
+- **[banana-agent](https://github.com/Calgooon/banana-agent)** — AI image generation agent built from this template. Live at [`banana-agent.dev-a3e.workers.dev`](https://banana-agent.dev-a3e.workers.dev).
 
 ---
 

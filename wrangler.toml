@@ -1,0 +1,16 @@
+name = "bsv-agent-template"
+main = "build/worker/shim.mjs"
+compatibility_date = "2024-01-01"
+
+# Replace with your Cloudflare account ID (find it in the CF dashboard)
+account_id = "your-cloudflare-account-id-here"
+
+[build]
+command = "worker-build --release"
+
+# KV namespace for auth sessions.
+# Create one with: npx wrangler kv namespace create AUTH_SESSIONS
+# Then paste the id below.
+[[kv_namespaces]]
+binding = "AUTH_SESSIONS"
+id = "your-kv-namespace-id-here"

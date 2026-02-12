@@ -1,0 +1,11 @@
+{
+  "name": "bsv-agent-template",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "build": "wrangler build"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

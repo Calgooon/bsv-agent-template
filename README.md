@@ -229,7 +229,7 @@ Your agent is now live at `https://bsv-agent-template.<your-subdomain>.workers.d
 
 - **[x402-client](https://github.com/Calgooon/x402)** — Python client library for BRC-31 auth + BRC-29 payment. Use this to test your agent.
 - **[bsv-auth-cloudflare](https://github.com/Calgooon)** — The Rust middleware that powers authentication and payment verification.
-- **[banana-agent](https://github.com/Calgooon/banana-agent)** — A real-world agent built from this template: AI image generation with dynamic pricing.
+- **[banana-agent](https://github.com/Calgooon/banana-agent)** — A real-world agent built from this template: AI image generation with dynamic pricing. Live at [`banana-agent.dev-a3e.workers.dev`](https://banana-agent.dev-a3e.workers.dev).
 
 ---
 

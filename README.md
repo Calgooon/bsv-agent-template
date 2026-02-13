@@ -27,6 +27,8 @@ This template gives you a working Cloudflare Worker that:
 
 2. **Accepts micropayments** using [BRC-29](https://github.com/bitcoin-sv/BRCs/blob/master/peer-to-peer/0029.md) — paid endpoints return HTTP 402 with a payment request, the client creates a BSV transaction, and retries with payment. The server verifies and internalizes the funds automatically.
 
+3. **Refunds on failure** using BRC-29 — if your service fails after accepting payment, the middleware issues an automatic refund transaction back to the client's wallet.
+
 Fork it. Replace the hello-world logic with your service. Deploy. You now have a paid API.
 
 ---
@@ -142,6 +144,8 @@ fn handle_my_endpoint(
 ```
 
 **Auth + payment** — copy `handle_paid` and put your business logic in the "Payment accepted!" section (search for that comment in `src/lib.rs`).
+
+**Auth + payment + refund** — wrap your business logic in a match block. If it fails, call `issue_refund()` to return the funds automatically. See the refund pattern comments in `handle_paid` for the full example.
 
 ### 3. Add a route
 

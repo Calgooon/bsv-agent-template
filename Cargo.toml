@@ -10,7 +10,7 @@ crate-type = ["cdylib"]
 # PRIVATE: These crates are not on crates.io yet.
 # Contact @Calgooon on GitHub for access.
 # https://github.com/Calgooon
-bsv-auth-cloudflare = { path = "../rust-middleware/bsv-auth-cloudflare" }
+bsv-auth-cloudflare = { path = "../rust-middleware/bsv-auth-cloudflare", features = ["refund"] }
 bsv-sdk = { path = "../rust-sdk", features = ["auth", "wallet", "transaction", "wasm"] }
 
 # Public crates (from crates.io)

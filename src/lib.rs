@@ -26,6 +26,7 @@
 //! 4. If paid, set your price — either use the `PAID_ENDPOINT_PRICE` constant or
 //!    calculate dynamic pricing like banana-agent does
 
+#[allow(unused_imports)]
 use bsv_auth_cloudflare::{
     add_cors_headers,
     client::WorkerStorageClient,
@@ -36,6 +37,7 @@ use bsv_auth_cloudflare::{
         process_auth, sign_json_response,
         AuthMiddlewareOptions, AuthResult,
     },
+    refund::issue_refund,
     types::BsvPayment,
 };
 use bsv_sdk::auth::utils::{create_nonce, verify_nonce};
@@ -399,6 +401,34 @@ async fn handle_paid(
                     //
                     // This is where you put your actual business logic.
                     // The client has paid — give them what they paid for.
+                    //
+                    // If your business logic can fail (e.g., calling an
+                    // external API), wrap it like this:
+                    //
+                    //   let service_result = call_my_service().await;
+                    //   match service_result {
+                    //       Ok(data) => { /* build success response */ }
+                    //       Err(e) => {
+                    //           // Service failed after payment — issue refund
+                    //           match issue_refund(
+                    //               server_key,
+                    //               &auth_context.identity_key,
+                    //               PAID_ENDPOINT_PRICE,
+                    //               &format!("Service failed: {}", e),
+                    //               AGENT_NAME,
+                    //           ).await {
+                    //               Ok(refund) => {
+                    //                   let body = serde_json::json!({
+                    //                       "status": "error",
+                    //                       "code": "ERR_SERVICE_FAILED_REFUND_ISSUED",
+                    //                       "refund": { ... refund fields ... }
+                    //                   });
+                    //                   return sign_json_response(&body, 500, &[], session);
+                    //               }
+                    //               Err(_) => { /* refund failed — log and return error */ }
+                    //           }
+                    //       }
+                    //   }
 
                     let body = serde_json::json!({
                         "message": "Payment received! Hello from bsv-agent-template.",
@@ -465,6 +495,26 @@ fn handle_x402_info(env: &Env) -> Result<Response> {
         "serverIdentityKey": server_identity,
         "authProtocol": "brc-31",
         "authEndpoint": "/.well-known/auth",
+        "capabilities": {
+            "auth": "brc-31",
+            "payment": "brc-29",
+            "refunds": true,
+            "refundProtocol": "brc-29",
+            "refundFormat": {
+                "transaction": "string (base64 AtomicBEEF)",
+                "derivationPrefix": "string (base64, HMAC-derived nonce)",
+                "derivationSuffix": "string (base64, random 32 bytes)",
+                "senderIdentityKey": "string (66-char hex compressed pubkey)",
+                "satoshis": "integer (amount refunded)",
+                "txid": "string (64-char hex transaction ID)"
+            },
+            "refundInternalization": {
+                "protocol": "wallet payment",
+                "outputIndex": 0,
+                "method": "internalizeAction",
+                "note": "Client decodes base64 AtomicBEEF, calls wallet internalizeAction with paymentRemittance."
+            }
+        },
         "endpoints": [
             {
                 "path": "/",
@@ -513,8 +563,16 @@ fn handle_x402_info(env: &Env) -> Result<Response> {
                         PAID_ENDPOINT_PRICE
                     )
                 },
+                "refund": {
+                    "supported": true,
+                    "trigger": "service_failure",
+                    "delivery": "inline",
+                    "description": "If the server fails to deliver after accepting payment, the error response includes a 'refund' object with AtomicBEEF and derivation info. Client should auto-internalize.",
+                    "errorCodes": ["ERR_SERVICE_FAILED_REFUND_ISSUED"],
+                    "responseField": "refund"
+                },
                 "description": format!(
-                    "Paid endpoint requiring BRC-31 auth + {} satoshi BRC-29 payment. The server verifies the payment transaction and returns a receipt.",
+                    "Paid endpoint requiring BRC-31 auth + {} satoshi BRC-29 payment. The server verifies the payment transaction and returns a receipt. Supports refunds on service failure.",
                     PAID_ENDPOINT_PRICE
                 ),
                 "input": {

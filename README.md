@@ -75,6 +75,10 @@ npm run dev
     │  (no payment header)                │
     │────────────────────────────────────>│
     │                                     │
+    │                    Create nonce      │
+    │                    Bind nonce→price  │
+    │                    in KV (5 min TTL) │
+    │                                     │
     │  HTTP 402                           │
     │  x-bsv-payment-satoshis-required: 10│
     │  x-bsv-payment-derivation-prefix: … │
@@ -91,6 +95,9 @@ npm run dev
     │────────────────────────────────────>│
     │                                     │
     │                    Verify nonce ✓    │
+    │                    Check KV binding ✓│
+    │                    Delete nonce      │
+    │                    (single-use) ✓    │
     │                    Decode BEEF tx ✓  │
     │                    Internalize via   │
     │                    storage server ✓  │
@@ -110,12 +117,14 @@ The full flow happens in **two HTTP round-trips**. The client library ([x402-cli
 
 The template is designed to be extended. Here's how to add a new paid endpoint:
 
-### 1. Set your price
+### 1. Configure your agent
 
 At the top of `src/lib.rs`:
 
 ```rust
-const PAID_ENDPOINT_PRICE: u64 = 10;  // Change this
+const AGENT_NAME: &str = "my-agent";       // Displayed in x402-info manifest
+const ORIGINATOR: &str = "my-agent";       // Nonce originator (must match for create/verify)
+const PAID_ENDPOINT_PRICE: u64 = 10;       // Satoshis for your endpoint
 ```
 
 Or define per-endpoint constants:
@@ -231,10 +240,10 @@ Your agent is now live at `https://bsv-agent-template.<your-subdomain>.workers.d
 
 ## See It in Action
 
-[banana-agent](https://github.com/Calgooon/banana-agent) is a real agent built from this template — AI image generation with dynamic pricing, live in production. Try it with the `/x402` skill in [Claude Code](https://claude.com/claude-code):
+[x402agency.com](https://x402agency.com) runs real agents built from this template — AI image generation, video generation, speech-to-text, and more. Try any agent with the `/x402` skill in [Claude Code](https://claude.com/claude-code):
 
 ```
-/x402 https://banana-agent.dev-a3e.workers.dev
+/x402 https://nano-banana-pro.x402agency.com
 ```
 
 The skill discovers endpoints, authenticates, negotiates payment, and handles the full flow automatically.
@@ -245,7 +254,7 @@ The skill discovers endpoints, authenticates, negotiates payment, and handles th
 
 - **[x402-client](https://github.com/Calgooon/x402)** — Python client library for BRC-31 auth + BRC-29 payment. Use this to test your agent.
 - **[bsv-auth-cloudflare](https://github.com/Calgooon)** — The Rust middleware that powers authentication and payment verification.
-- **[banana-agent](https://github.com/Calgooon/banana-agent)** — AI image generation agent built from this template. Live at [`banana-agent.dev-a3e.workers.dev`](https://banana-agent.dev-a3e.workers.dev).
+- **[x402agency.com](https://x402agency.com)** — Live agents built from this template: image generation, video generation, speech-to-text, X research.
 
 ---
 

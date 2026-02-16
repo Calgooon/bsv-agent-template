@@ -49,8 +49,12 @@ use worker::*;
 //
 // Change these constants to customize your agent.
 
-/// Your agent's name. Used in the x402-info manifest and as the nonce originator.
+/// Your agent's name. Used in the x402-info manifest.
 const AGENT_NAME: &str = "bsv-agent-template";
+
+/// Nonce originator — must match between create_nonce and verify_nonce.
+/// All production agents use ORIGINATOR for this constant.
+const ORIGINATOR: &str = "bsv-agent-template";
 
 /// Price in satoshis for the /paid endpoint.
 /// 10 sats ≈ $0.000005 at $50/BSV — a trivial amount for testing.
@@ -154,6 +158,7 @@ pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                 &session,
                 &server_key,
                 &request_body,
+                &env,
             )
             .await
             {
@@ -225,6 +230,7 @@ async fn handle_paid(
     session: &bsv_auth_cloudflare::middleware::AuthSession,
     server_key: &str,
     request_body: &[u8],
+    env: &Env,
 ) -> Result<Response> {
     let private_key = PrivateKey::from_hex(server_key)
         .map_err(|e| Error::from(format!("Invalid server key: {}", e)))?;
@@ -260,9 +266,27 @@ async fn handle_paid(
             // to derive the payment key. The server can later verify this
             // nonce to confirm it issued the payment request.
 
-            let derivation_prefix = create_nonce(&wallet, None, AGENT_NAME)
+            let derivation_prefix = create_nonce(&wallet, None, ORIGINATOR)
                 .await
                 .map_err(|e| Error::from(e.to_string()))?;
+
+            // Bind this nonce to the quoted price in KV (5-min TTL).
+            // On payment, we verify the nonce exists and delete it.
+            // This prevents:
+            //   1. Nonce reuse (replay attacks) — each nonce is deleted after one use
+            //   2. Price manipulation — if you add dynamic pricing, store the
+            //      request parameters here and verify them on payment
+            let kv = env.kv("AUTH_SESSIONS")?;
+            let binding = serde_json::json!({
+                "price_sats": PAID_ENDPOINT_PRICE,
+            });
+            kv.put(
+                &format!("price:{}", derivation_prefix),
+                &binding.to_string(),
+            )?
+            .expiration_ttl(300) // 5 minutes
+            .execute()
+            .await?;
 
             let body = serde_json::json!({
                 "status": "error",
@@ -304,7 +328,7 @@ async fn handle_paid(
             // This prevents replay attacks — only nonces created by our
             // server with our private key will pass verification.
             let nonce_valid =
-                verify_nonce(&payment.derivation_prefix, &wallet, None, AGENT_NAME)
+                verify_nonce(&payment.derivation_prefix, &wallet, None, ORIGINATOR)
                     .await
                     .unwrap_or(false);
 
@@ -317,6 +341,23 @@ async fn handle_paid(
                 return sign_json_response(&body, 400, &[], session)
                     .map_err(|e| Error::from(e.to_string()));
             }
+
+            // Verify the nonce exists in KV (proves it's unused) and delete it.
+            // This makes each nonce single-use — prevents replay attacks.
+            let kv = env.kv("AUTH_SESSIONS")?;
+            let kv_key = format!("price:{}", payment.derivation_prefix);
+            let stored = kv.get(&kv_key).text().await?;
+            if stored.is_none() {
+                let body = serde_json::json!({
+                    "status": "error",
+                    "code": "ERR_NONCE_EXPIRED_OR_USED",
+                    "description": "Payment nonce has expired or was already used."
+                });
+                return sign_json_response(&body, 400, &[], session)
+                    .map_err(|e| Error::from(e.to_string()));
+            }
+            // Delete to prevent reuse (one-time nonce)
+            kv.delete(&kv_key).await?;
 
             // Decode the BSV transaction from base64
             let tx_bytes = from_base64(&payment.transaction)
@@ -382,6 +423,9 @@ async fn handle_paid(
                         "senderIdentityKey": auth_context.identity_key
                     }
                 }],
+                // Sender label enables counterparty tracking in wallet dashboards.
+                // All production agents MUST include this.
+                "labels": [format!("sender:{}", auth_context.identity_key)],
                 "description": "Payment for API request"
             });
 
@@ -415,7 +459,7 @@ async fn handle_paid(
                     //               &auth_context.identity_key,
                     //               PAID_ENDPOINT_PRICE,
                     //               &format!("Service failed: {}", e),
-                    //               AGENT_NAME,
+                    //               ORIGINATOR,
                     //           ).await {
                     //               Ok(refund) => {
                     //                   let body = serde_json::json!({
@@ -609,6 +653,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_originator_matches_agent_name() {
+        // ORIGINATOR is used for nonce creation/verification.
+        // It must be consistent — changing it breaks in-flight payments.
+        assert_eq!(ORIGINATOR, AGENT_NAME);
+    }
+
+    #[test]
     fn test_agent_name() {
         assert_eq!(AGENT_NAME, "bsv-agent-template");
     }
@@ -620,35 +671,40 @@ mod tests {
 
     #[tokio::test]
     async fn test_nonce_roundtrip() {
-        // Verify that create_nonce + verify_nonce work with our AGENT_NAME
+        // Verify that create_nonce + verify_nonce work with our ORIGINATOR
         let pk = PrivateKey::from_hex(
             "0000000000000000000000000000000000000000000000000000000000000001",
         )
         .unwrap();
         let wallet = ProtoWallet::new(Some(pk));
 
-        let nonce = create_nonce(&wallet, None, AGENT_NAME).await.unwrap();
+        let nonce = create_nonce(&wallet, None, ORIGINATOR).await.unwrap();
         // Nonce must be valid base64 (used as derivation prefix for BRC-42)
         assert!(from_base64(&nonce).is_ok(), "Nonce must be valid base64");
 
-        let valid = verify_nonce(&nonce, &wallet, None, AGENT_NAME)
+        let valid = verify_nonce(&nonce, &wallet, None, ORIGINATOR)
             .await
             .unwrap();
         assert!(valid, "Nonce should verify with same wallet and originator");
     }
 
     #[tokio::test]
-    async fn test_nonce_wrong_originator_fails() {
-        let pk = PrivateKey::from_hex(
+    async fn test_nonce_wrong_wallet_fails() {
+        let pk1 = PrivateKey::from_hex(
             "0000000000000000000000000000000000000000000000000000000000000001",
         )
         .unwrap();
-        let wallet = ProtoWallet::new(Some(pk));
+        let pk2 = PrivateKey::from_hex(
+            "0000000000000000000000000000000000000000000000000000000000000002",
+        )
+        .unwrap();
+        let wallet1 = ProtoWallet::new(Some(pk1));
+        let wallet2 = ProtoWallet::new(Some(pk2));
 
-        let nonce = create_nonce(&wallet, None, AGENT_NAME).await.unwrap();
-        let valid = verify_nonce(&nonce, &wallet, None, "wrong-originator")
+        let nonce = create_nonce(&wallet1, None, ORIGINATOR).await.unwrap();
+        let valid = verify_nonce(&nonce, &wallet2, None, ORIGINATOR)
             .await
             .unwrap();
-        assert!(!valid, "Nonce should fail with wrong originator");
+        assert!(!valid, "Nonce should fail with different wallet key");
     }
 }

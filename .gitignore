@@ -1,4 +1,5 @@
 .dev.vars
+secrets.md
 target/
 build/
 node_modules/

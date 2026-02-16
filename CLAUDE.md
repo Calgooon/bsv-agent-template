@@ -64,13 +64,14 @@ Contact [@Calgooon](https://github.com/Calgooon) for access to private crates.
 ### Payment Flow (`handle_paid`)
 
 1. Check `x-bsv-payment` header
-2. **No header** → `create_nonce()` → return 402 with payment headers (version, satoshis-required, derivation-prefix)
-3. **Header present** → parse `BsvPayment` JSON → `verify_nonce()` → `from_base64()` decode tx → `Transaction::from_beef()` extract txid → `WorkerStorageClient` internalize via storage.babbage.systems → return 200 with receipt
+2. **No header** → `create_nonce()` → bind nonce→price in KV (5-min TTL) → return 402 with payment headers (version, satoshis-required, derivation-prefix)
+3. **Header present** → parse `BsvPayment` JSON → `verify_nonce()` → verify nonce exists in KV (single-use) → delete KV binding → `from_base64()` decode tx → `Transaction::from_beef()` extract txid → `WorkerStorageClient` internalize with sender label via storage.babbage.systems → return 200 with receipt
 
 ### Key Constants
 
 ```rust
-const AGENT_NAME: &str = "bsv-agent-template";  // Nonce originator + manifest name
+const AGENT_NAME: &str = "bsv-agent-template";  // Manifest name
+const ORIGINATOR: &str = "bsv-agent-template";   // Nonce originator (must match between create/verify)
 const PAID_ENDPOINT_PRICE: u64 = 10;             // Satoshis for /paid endpoint
 ```
 
@@ -86,7 +87,7 @@ const PAID_ENDPOINT_PRICE: u64 = 10;             // Satoshis for /paid endpoint
 Requires [MetaNet Client](https://projectbabbage.com) running locally (wallet at `localhost:3321`).
 
 ```bash
-# x402-client scripts (from ~/bsv/calgooon-skills/skills/x402/scripts/)
+# Using x402-client (https://github.com/Calgooon/x402)
 python3 brc31_helpers.py discover "http://localhost:8787"
 python3 brc31_helpers.py auth POST "http://localhost:8787/free"
 python3 brc31_helpers.py pay POST "http://localhost:8787/paid"  # spends 10 real sats
@@ -109,6 +110,6 @@ curl http://localhost:8787/
 
 - `bsv-auth-cloudflare` and `bsv-sdk` are private path dependencies. The repo won't compile without them cloned as siblings.
 - Payment internalization goes through `storage.babbage.systems` (mainnet). Test payments spend real sats.
-- The nonce originator (`AGENT_NAME`) must match between `create_nonce` and `verify_nonce` — changing it after issuing 402s will break in-flight payments.
+- The nonce originator (`ORIGINATOR`) must match between `create_nonce` and `verify_nonce` — changing it after issuing 402s will break in-flight payments.
 - `.dev.vars` is gitignored. Only `.dev.vars.example` is committed. Never commit real keys.
 - The KV id in `wrangler.toml` is a placeholder — must be replaced before `wrangler dev` will work with KV persistence.
